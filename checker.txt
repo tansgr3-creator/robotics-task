@@ -1,0 +1,55 @@
+# checker.py - Simple ROS Code Checker
+
+import os
+import json
+import zipfile
+import tempfile
+
+def check_code(zip_path):
+    print("🔍 Checking your robot code...")
+    
+    results = {
+        "valid": True,
+        "errors": [],
+        "warnings": [],
+        "message": ""
+    }
+    
+    # Check if it's a ZIP file
+    if not zip_path.endswith('.zip'):
+        results["valid"] = False
+        results["errors"].append("File must be a .zip file")
+        return results
+    
+    # Try to open the ZIP
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            files = z.namelist()
+            results["message"] = f"Found {len(files)} files in package"
+            
+            # Check for important ROS files
+            has_package_xml = any('package.xml' in f for f in files)
+            has_cmake = any('CMakeLists.txt' in f for f in files)
+            
+            if not has_package_xml:
+                results["warnings"].append("⚠️ Missing package.xml (ROS needs this)")
+            
+            if not has_cmake:
+                results["warnings"].append("⚠️ Missing CMakeLists.txt")
+            
+            # Check for Python files
+            py_files = [f for f in files if f.endswith('.py')]
+            if py_files:
+                results["message"] += f", including {len(py_files)} Python files"
+            
+    except Exception as e:
+        results["valid"] = False
+        results["errors"].append(f"Cannot open ZIP file: {str(e)}")
+    
+    print("✅ Check complete!")
+    return results
+
+if __name__ == "__main__":
+    # If run directly, show an example
+    test_result = check_code("test.zip")
+    print(json.dumps(test_result, indent=2))

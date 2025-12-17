@@ -1,0 +1,48 @@
+# sim_runner.py - Simple Simulation Runner
+
+import time
+import json
+import random
+
+def run_simulation(zip_path):
+    print("🤖 Starting robot simulation...")
+    
+    results = {
+        "success": True,
+        "message": "Simulation completed!",
+        "screenshots": [],
+        "joint_movements": [],
+        "cube_moved": random.choice([True, False])
+    }
+    
+    # Simulate robot movement
+    time.sleep(1)
+    print("📸 Taking screenshots...")
+    
+    # Create dummy screenshots
+    for i in range(4):
+        screenshot = {
+            "time": i,
+            "description": f"Robot moving joint {i+1}",
+            "file": f"frame_{i:03d}.png"
+        }
+        results["screenshots"].append(screenshot)
+        time.sleep(0.3)
+    
+    # Simulate joint data
+    for i in range(5):
+        joint_data = {
+            "joint_1": random.uniform(0, 1.5),
+            "joint_2": random.uniform(-1, 1),
+            "joint_3": random.uniform(0, 2.0)
+        }
+        results["joint_movements"].append(joint_data)
+    
+    results["message"] = f"Robot {'successfully moved' if results['cube_moved'] else 'failed to move'} the cube!"
+    
+    print("🎬 Simulation complete!")
+    return results
+
+if __name__ == "__main__":
+    test_result = run_simulation("test.zip")
+    print(json.dumps(test_result, indent=2))

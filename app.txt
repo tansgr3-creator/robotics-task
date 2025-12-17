@@ -1,0 +1,333 @@
+# app.py - Web Interface
+
+from flask import Flask, render_template, request, jsonify, send_file
+import os
+import json
+import threading
+import time
+
+app = Flask(__name__)
+
+# Create necessary folders
+os.makedirs("uploads", exist_ok=True)
+os.makedirs("static/screenshots", exist_ok=True)
+
+# Store results
+current_results = {}
+
+@app.route('/')
+def home():
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>🤖 Robot Code Checker</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                background: #f0f0f0;
+            }
+            .container {
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #2c3e50;
+                border-bottom: 3px solid #3498db;
+                padding-bottom: 10px;
+            }
+            .upload-box {
+                border: 3px dashed #3498db;
+                padding: 40px;
+                text-align: center;
+                margin: 20px 0;
+                border-radius: 10px;
+                background: #ecf0f1;
+            }
+            button {
+                background: #2ecc71;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 16px;
+                border-radius: 5px;
+                cursor: pointer;
+                margin: 10px;
+            }
+            button:hover {
+                background: #27ae60;
+            }
+            .button-red {
+                background: #e74c3c;
+            }
+            .button-red:hover {
+                background: #c0392b;
+            }
+            .button-blue {
+                background: #3498db;
+            }
+            .button-blue:hover {
+                background: #2980b9;
+            }
+            .result-box {
+                background: #f9f9f9;
+                border-left: 4px solid #3498db;
+                padding: 15px;
+                margin: 15px 0;
+                display: none;
+            }
+            .error {
+                color: #e74c3c;
+                font-weight: bold;
+            }
+            .success {
+                color: #2ecc71;
+                font-weight: bold;
+            }
+            .warning {
+                color: #f39c12;
+            }
+            .screenshot {
+                width: 200px;
+                height: 150px;
+                background: #34495e;
+                margin: 10px;
+                display: inline-block;
+                border-radius: 5px;
+                color: white;
+                text-align: center;
+                line-height: 150px;
+                font-size: 14px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🤖 Robot Code Checker & Simulator</h1>
+            <p>Upload your ROS robot code as a ZIP file to check and simulate it.</p>
+            
+            <div class="upload-box">
+                <h2>📁 Upload Your Code</h2>
+                <input type="file" id="fileInput" accept=".zip">
+                <br><br>
+                <button onclick="uploadFile()" id="uploadBtn">Upload & Check Code</button>
+                <div id="fileName" style="margin-top:10px;color:#7f8c8d;"></div>
+            </div>
+            
+            <div id="checkResult" class="result-box">
+                <h3>📋 Check Results</h3>
+                <div id="resultText"></div>
+                <button onclick="runSimulation()" id="simBtn" disabled class="button-blue">🚀 Run Simulation</button>
+            </div>
+            
+            <div id="simResult" class="result-box">
+                <h3>🎬 Simulation Results</h3>
+                <div id="simText"></div>
+                <div id="screenshots"></div>
+            </div>
+            
+            <div style="margin-top: 30px; text-align: center;">
+                <h3>Try Example Packages:</h3>
+                <button onclick="downloadExample('good')" class="button-blue">Download Good Example</button>
+                <button onclick="downloadExample('bad')" class="button-red">Download Bad Example</button>
+            </div>
+        </div>
+        
+        <script>
+            let currentFile = null;
+            let checkResults = null;
+            
+            function uploadFile() {
+                const fileInput = document.getElementById('fileInput');
+                const uploadBtn = document.getElementById('uploadBtn');
+                
+                if (!fileInput.files[0]) {
+                    alert('Please select a file first!');
+                    return;
+                }
+                
+                currentFile = fileInput.files[0];
+                document.getElementById('fileName').innerHTML = `Selected: <b>${currentFile.name}</b>`;
+                
+                uploadBtn.disabled = true;
+                uploadBtn.innerHTML = 'Checking...';
+                
+                const formData = new FormData();
+                formData.append('file', currentFile);
+                
+                fetch('/check', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    checkResults = data;
+                    displayCheckResults(data);
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = 'Upload & Check Code';
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = 'Upload & Check Code';
+                });
+            }
+            
+            function displayCheckResults(results) {
+                const resultBox = document.getElementById('checkResult');
+                const resultText = document.getElementById('resultText');
+                const simBtn = document.getElementById('simBtn');
+                
+                resultBox.style.display = 'block';
+                
+                let html = '';
+                if (results.valid) {
+                    html += '<p class="success">✅ Code is valid! Ready to simulate.</p>';
+                    simBtn.disabled = false;
+                } else {
+                    html += '<p class="error">❌ Code has errors:</p>';
+                    simBtn.disabled = true;
+                }
+                
+                html += `<p>${results.message}</p>`;
+                
+                if (results.errors && results.errors.length > 0) {
+                    html += '<p class="error">Errors:</p><ul>';
+                    results.errors.forEach(err => {
+                        html += `<li>${err}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                if (results.warnings && results.warnings.length > 0) {
+                    html += '<p class="warning">Warnings:</p><ul>';
+                    results.warnings.forEach(warn => {
+                        html += `<li>${warn}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                resultText.innerHTML = html;
+            }
+            
+            function runSimulation() {
+                const simBtn = document.getElementById('simBtn');
+                const simText = document.getElementById('simText');
+                
+                simBtn.disabled = true;
+                simBtn.innerHTML = 'Simulating...';
+                
+                fetch('/simulate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: currentFile.name})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    displaySimulationResults(data);
+                    simBtn.innerHTML = '🚀 Run Simulation';
+                })
+                .catch(error => {
+                    alert('Simulation error: ' + error);
+                    simBtn.disabled = false;
+                    simBtn.innerHTML = '🚀 Run Simulation';
+                });
+            }
+            
+            function displaySimulationResults(results) {
+                const simBox = document.getElementById('simResult');
+                const simText = document.getElementById('simText');
+                const screenshots = document.getElementById('screenshots');
+                
+                simBox.style.display = 'block';
+                
+                let html = '';
+                if (results.success) {
+                    html += `<p class="success">✅ ${results.message}</p>`;
+                } else {
+                    html += `<p class="error">❌ ${results.message}</p>`;
+                }
+                
+                html += `<p>Recorded ${results.joint_movements.length} joint movements</p>`;
+                html += `<p>Cube moved to target: ${results.cube_moved ? '✅ Yes' : '❌ No'}</p>`;
+                
+                simText.innerHTML = html;
+                
+                // Show screenshots
+                let screenshotsHTML = '<h4>Simulation Screenshots:</h4>';
+                results.screenshots.forEach(shot => {
+                    screenshotsHTML += `
+                        <div class="screenshot">
+                            Frame ${shot.time}: ${shot.description}
+                        </div>
+                    `;
+                });
+                screenshots.innerHTML = screenshotsHTML;
+            }
+            
+            function downloadExample(type) {
+                window.open(`/download/${type}`, '_blank');
+            }
+        </script>
+    </body>
+    </html>
+    '''
+
+@app.route('/check', methods=['POST'])
+def check_code():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    # Save file
+    filepath = f"uploads/{file.filename}"
+    file.save(filepath)
+    
+    # Run checker
+    from checker import check_code as run_check
+    results = run_check(filepath)
+    
+    return jsonify(results)
+
+@app.route('/simulate', methods=['POST'])
+def simulate():
+    data = request.json
+    filename = data.get('filename', 'unknown.zip')
+    filepath = f"uploads/{filename}"
+    
+    # Run simulation
+    from sim_runner import run_simulation as run_sim
+    results = run_sim(filepath)
+    
+    return jsonify(results)
+
+@app.route('/download/<type>')
+def download_example(type):
+    # Create example ZIP files
+    import zipfile
+    
+    if type == 'good':
+        filename = "good_example.zip"
+        with zipfile.ZipFile(f"uploads/{filename}", 'w') as zf:
+            zf.writestr("package.xml", "<package><name>good_robot</name></package>")
+            zf.writestr("robot_code.py", "print('Hello Robot!')")
+            zf.writestr("CMakeLists.txt", "# ROS build file")
+    else:
+        filename = "bad_example.zip"
+        with zipfile.ZipFile(f"uploads/{filename}", 'w') as zf:
+            zf.writestr("bad_code.py", "while True: print('No sleep!')")
+    
+    return send_file(f"uploads/{filename}", as_attachment=True)
+
+if __name__ == '__main__':
+    print("🤖 Starting Robot Code Checker...")
+    print("🌐 Open your web browser and go to: http://localhost:5000")
+    app.run(debug=True, port=5000)
